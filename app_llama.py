@@ -44,10 +44,15 @@ def main():
 
 
     if llama_key ==v:
-        llama_key=st.secrets["LLAMA_API_KEY"]
+        if "LLAMA_API_KEY" in st.secrets:
+            llama_key=st.secrets["LLAMA_API_KEY"]
+        else:
+            st.error("Please provide a valid LLAMA API KEY")
     # if openai_key=='':
     #     load_dotenv()
     os.environ["LLAMA_API_KEY"] = llama_key
+
+    VectorStore = None
 
     # upload a PDF file
 
@@ -57,54 +62,57 @@ def main():
     # st.write(pdf)
 
     if pdf is not None:
-        pdf_reader = PdfReader(pdf)
+        with st.spinner("Processing PDF..."):
+            pdf_reader = PdfReader(pdf)
 
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text()
 
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len
-            )
-        chunks = text_splitter.split_text(text=text)
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200,
+                length_function=len
+                )
+            chunks = text_splitter.split_text(text=text)
 
-        # # embeddings
-        store_name = pdf.name[:-4]
-        st.write(f'{store_name}')
-        # st.write(chunks)
+            # # embeddings
+            store_name = pdf.name[:-4]
+            st.write(f'{store_name}')
+            # st.write(chunks)
 
-        if os.path.exists(f"{store_name}.pkl"):
-            with open(f"{store_name}.pkl", "rb") as f:
-                VectorStore = pickle.load(f)
-            # st.write('Embeddings Loaded from the Disk')s
-        else:
-            model_path = r"\\wsl.localhost\Ubuntu\mnt\wslg\distro\usr\share\ollama\.ollama\models\manifests\registry.ollama.ai\library\llama3.2"
+            if os.path.exists(f"{store_name}.pkl"):
+                with open(f"{store_name}.pkl", "rb") as f:
+                    VectorStore = pickle.load(f)
+                st.write('Embeddings Loaded from the Disk')
+            else:
+                model_path = st.text_input("Enter model path", value=r"\\wsl.localhost\Ubuntu\mnt\wslg\distro\usr\share\ollama\.ollama\models\manifests\registry.ollama.ai\library\llama3.2")
+                embeddings = LlamaCppEmbeddings(model_path=model_path)
+                VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
+                with open(f"{store_name}.pkl", "wb") as f:
+                    pickle.dump(VectorStore, f)
 
-            embeddings = LlamaCppEmbeddings(model_path=model_path)
-            VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
-            with open(f"{store_name}.pkl", "wb") as f:
-                pickle.dump(VectorStore, f)
+            # embeddings = OpenAIEmbeddings()
+            # VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
 
-        # embeddings = OpenAIEmbeddings()
-        # VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
-
-    # st.header("or.. Try it with this The Alchaemist PDF book")
-    # if st.button('Ask The Alchemist Book Questions'):
-    #     with open("The_Alchemist.pkl", "rb") as f:
-    #         VectorStore = pickle.load(f)
-        # Accept user questions/query
-        st.header("3. Ask questions about your PDF file:")
-        q="Tell me about the content of the PDF"
-        query = st.text_input("Questions",value=q)
-        # st.write(query)
+        # st.header("or.. Try it with this The Alchaemist PDF book")
+        # if st.button('Ask The Alchemist Book Questions'):
+        #     with open("The_Alchemist.pkl", "rb") as f:
+        #         VectorStore = pickle.load(f)
+            # Accept user questions/query
+            st.header("3. Ask questions about your PDF file:")
+            q="Tell me about the content of the PDF"
+            query = st.text_input("Questions",value=q)
+            # st.write(query)
 
         if st.button("Ask"):
             # st.write(openai_key)
             # os.environ["OPENAI_API_KEY"] = openai_key
             if llama_key =='':
                 st.write('Warning: Please pass your LLAMA API KEY on Step 1')
+            elif VectorStore is None:
+                st.write('Warning: Please upload a PDF and waiting for processing bofore asking questions')
+            
             else:
                 docs = VectorStore.similarity_search(query=query, k=3)
 
